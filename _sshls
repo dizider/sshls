@@ -1,0 +1,22 @@
+#compdef sshls
+
+_sshls_tags() {
+    local -a tags
+    tags=("${(@f)$(awk '
+        /^[[:space:]]*#[[:space:]]*[Tt]ags:/ {
+            sub(/^[[:space:]]*#[[:space:]]*[Tt]ags:[[:space:]]*/, "")
+            n = split($0, a, /,[[:space:]]*/)
+            for (i = 1; i <= n; i++) {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", a[i])
+                if (a[i] != "") print a[i]
+            }
+        }
+    ' ~/.ssh/config | sort -u)}")
+    compadd -a tags
+}
+
+_sshls() {
+    _arguments '::tag:_sshls_tags'
+}
+
+_sshls "$@"

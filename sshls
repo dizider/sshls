@@ -1,0 +1,41 @@
+#!/bin/bash
+
+tag_filter="${1:-}"
+
+while true; do
+    entries=$(awk '
+        /^Host / {
+            if (host != "" && host !~ /[*?]/ && tags !~ /(^|,)[[:space:]]*ignore[[:space:]]*(,|$)/) {
+                if (tags != "") printf "%s\t[%s]\n", host, tags
+                else print host
+            }
+            host = $2
+            tags = pending_tags
+            pending_tags = ""
+        }
+        /^[[:space:]]*#[[:space:]]*[Tt]ags:/ {
+            sub(/^[[:space:]]*#[[:space:]]*[Tt]ags:[[:space:]]*/, "")
+            pending_tags = $0
+        }
+        END {
+            if (host != "" && host !~ /[*?]/ && tags !~ /(^|,)[[:space:]]*ignore[[:space:]]*(,|$)/) {
+                if (tags != "") printf "%s\t[%s]\n", host, tags
+                else print host
+            }
+        }
+    ' ~/.ssh/config)
+
+    if [ -n "$tag_filter" ]; then
+        entries=$(echo "$entries" | awk -F'\t' -v tag="$tag_filter" 'NF>1 && $2 ~ "([\\[,][[:space:]]*)" tag "([[:space:]]*(,|\\]))"')
+    fi
+
+    table=$(echo "$entries" | sort | column -t -s $'\t')
+
+    selected=$(echo "$table" | fzf --height 15 \
+        --preview 'host=$(echo {} | awk "{print \$1}"); awk -v host="$host" "/^[[:space:]]*#[[:space:]]*[Tt]ags:/{if (!found) last_tags=\$0; next} /^Host /{if (found) exit; if (\$2==host){found=1; if (last_tags!=\"\") print last_tags}; last_tags=\"\"} found{print}" ~/.ssh/config')
+
+    [ -z "$selected" ] && break
+
+    host=$(echo "$selected" | awk '{print $1}')
+    TERM=xterm-256color ssh "$host"
+done

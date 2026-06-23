@@ -81,6 +81,11 @@ add_host() {
 if [ "${SSHLS_LIB:-}" != 1 ]; then
     tag_filter="${1:-}"
 
+    if [ "$tag_filter" = "add" ]; then
+        add_host
+        tag_filter=""
+    fi
+
     while true; do
         entries=$(awk '
             /^Host / {
@@ -110,8 +115,17 @@ if [ "${SSHLS_LIB:-}" != 1 ]; then
 
         table=$(echo "$entries" | sort | column -t -s $'\t')
 
-        selected=$(echo "$table" | fzf --height 15 \
+        fzf_out=$(echo "$table" | fzf --height 15 --expect=ctrl-a \
+            --header 'Enter: connect  Ctrl-A: add host' \
             --preview 'host=$(echo {} | awk "{print \$1}"); awk -v host="$host" "/^[[:space:]]*#[[:space:]]*[Tt]ags:/{if (!found) last_tags=\$0; next} /^Host /{if (found) exit; if (\$2==host){found=1; if (last_tags!=\"\") print last_tags}; last_tags=\"\"} found{print}" ~/.ssh/config')
+
+        key=$(printf '%s\n' "$fzf_out" | sed -n 1p)
+        selected=$(printf '%s\n' "$fzf_out" | sed -n 2p)
+
+        if [ "$key" = "ctrl-a" ]; then
+            add_host
+            continue
+        fi
 
         [ -z "$selected" ] && break
 

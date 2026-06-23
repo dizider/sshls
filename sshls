@@ -22,6 +22,62 @@ host_exists() {
     ' "$config"
 }
 
+add_host() {
+    local config="$HOME/.ssh/config"
+    local host hostname user port identity tags target
+
+    # Host alias — required, must be unique
+    while :; do
+        read -r -p "Host (alias): " host
+        if [ -z "$host" ]; then
+            echo "Host alias is required." >&2
+            continue
+        fi
+        if host_exists "$host" "$config"; then
+            echo "Host '$host' already exists in $config. Aborting." >&2
+            return
+        fi
+        break
+    done
+
+    read -r -p "HostName: " hostname
+    [ -z "$hostname" ] && echo "Warning: HostName is empty." >&2
+    read -r -p "User: " user
+    read -r -p "Port (blank = default): " port
+    read -r -p "IdentityFile (blank = none): " identity
+    read -r -p "Tags (comma-separated, blank = none): " tags
+
+    # Connection test
+    target="${hostname:-$host}"
+    local ssh_args=(-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new)
+    [ -n "$port" ] && ssh_args+=(-p "$port")
+    [ -n "$identity" ] && ssh_args+=(-i "$identity")
+    local dest="$target"
+    [ -n "$user" ] && dest="$user@$target"
+
+    echo "Testing connection to $dest ..." >&2
+    if ssh "${ssh_args[@]}" "$dest" true; then
+        echo "Connection OK." >&2
+    else
+        local answer
+        read -r -p "Connection test failed. Save anyway? [y/N] " answer
+        case "$answer" in
+            y|Y) ;;
+            *) echo "Aborted, not saved." >&2; return ;;
+        esac
+    fi
+
+    # Ensure config exists with correct perms
+    if [ ! -f "$config" ]; then
+        mkdir -p -m 700 "$HOME/.ssh"
+        touch "$config"
+        chmod 600 "$config"
+    fi
+
+    format_entry "$host" "$hostname" "$user" "$port" "$identity" "$tags" >> "$config"
+    echo "Added '$host' to $config." >&2
+}
+
 if [ "${SSHLS_LIB:-}" != 1 ]; then
     tag_filter="${1:-}"
 

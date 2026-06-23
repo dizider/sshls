@@ -11,6 +11,17 @@ format_entry() {
     [ -n "$identity" ] && printf '    IdentityFile %s\n' "$identity"
 }
 
+host_exists() {
+    local alias="$1" config="$2"
+    [ -f "$config" ] || return 1
+    awk -v a="$alias" '
+        /^Host / {
+            for (i = 2; i <= NF; i++) if ($i == a) { found = 1; exit }
+        }
+        END { exit !found }
+    ' "$config"
+}
+
 if [ "${SSHLS_LIB:-}" != 1 ]; then
     tag_filter="${1:-}"
 

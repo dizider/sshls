@@ -92,7 +92,7 @@ Then reload completions:
 exec zsh
 ```
 
-`sshls <Tab>` will now complete with the tags defined in `~/.ssh/config`.
+`sshls <Tab>` will now complete with the tags defined in `~/.ssh/config` as well as the `add` subcommand.
 
 ## Dependencies
 

@@ -30,6 +30,24 @@ You'll be prompted for the alias, HostName, User, Port, IdentityFile, and Tags
 non-interactive connection test; if it fails you'll be asked whether to save
 anyway. The new host appears in the picker immediately.
 
+### Adding a whole cluster
+
+If a field contains an inline range, the add flow expands it into one host per
+node. Use bash-style `{start..end}` (or `{start..end..step}`); padding is taken
+from the numbers you write, so the alias and hostname can pad differently:
+
+- Host (alias): `server-{01..03}`
+- HostName: `{1..3}.server.example.com`
+
+creates `server-01` → `1.server…`, `server-02` → `2.server…`,
+`server-03` → `3.server…`. Fields without a range (User, Port, IdentityFile,
+Tags) are copied to every node. Multiple ranged fields must expand to the same
+count and are matched up by position.
+
+All nodes are connection-tested in parallel; you then choose to save **all**,
+only the **passing** ones, or **abort**. Nodes whose alias already exists are
+skipped, so you can widen the range and re-run to grow a cluster.
+
 ## Tagging hosts
 
 Add a `# Tags:` comment immediately before the `Host` entry in `~/.ssh/config`:

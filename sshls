@@ -25,6 +25,11 @@ host_exists() {
 add_host() {
     local config="$HOME/.ssh/config"
     local host hostname user port identity tags target
+    # Ctrl-C during prompts cancels just the add and returns to the picker,
+    # rather than killing the whole script. The RETURN trap guarantees the
+    # INT trap is cleared on every exit path.
+    trap 'echo >&2; echo "Add cancelled." >&2; return 130' INT
+    trap 'trap - INT RETURN' RETURN
 
     # Host alias — required, must be unique
     while :; do

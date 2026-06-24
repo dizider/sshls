@@ -129,6 +129,90 @@ build_cluster() {
     done
 }
 
+add_cluster() {
+    local config="$HOME/.ssh/config"
+    local rows
+    rows=$(build_cluster "$@") || return   # reason already printed to stderr
+
+    local -a r_host r_name r_user r_port r_id r_tags
+    local h hn u p id t
+    while IFS=$'\t' read -r h hn u p id t; do
+        r_host+=("$h"); r_name+=("$hn"); r_user+=("$u")
+        r_port+=("$p"); r_id+=("$id");  r_tags+=("$t")
+    done <<<"$rows"
+    local n=${#r_host[@]}
+
+    # Drop nodes whose alias already exists.
+    local -a keep=() skipped=()
+    local i
+    for (( i = 0; i < n; i++ )); do
+        if host_exists "${r_host[i]}" "$config"; then
+            skipped+=("${r_host[i]}")
+        else
+            keep+=("$i")
+        fi
+    done
+    [ "${#skipped[@]}" -gt 0 ] && echo "Skipping existing: ${skipped[*]}" >&2
+    if [ "${#keep[@]}" -eq 0 ]; then
+        echo "All ${n} node(s) already exist; nothing to add." >&2
+        return
+    fi
+
+    # Parallel connection test; collect per-job status via wait PID.
+    echo "Testing ${#keep[@]} node(s) ..." >&2
+    local -a ssh_common=(-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new)
+    local -A pid_of=()
+    local idx target dest
+    for idx in "${keep[@]}"; do
+        target="${r_name[idx]:-${r_host[idx]}}"
+        dest="$target"
+        [ -n "${r_user[idx]}" ] && dest="${r_user[idx]}@$target"
+        local -a a=("${ssh_common[@]}")
+        [ -n "${r_port[idx]}" ] && a+=(-p "${r_port[idx]}")
+        [ -n "${r_id[idx]}" ]   && a+=(-i "${r_id[idx]}")
+        ssh "${a[@]}" "$dest" true >/dev/null 2>&1 &
+        pid_of[$idx]=$!
+    done
+
+    local -A passed=()
+    for idx in "${keep[@]}"; do
+        if wait "${pid_of[$idx]}"; then passed[$idx]=1; else passed[$idx]=0; fi
+    done
+
+    for idx in "${keep[@]}"; do
+        if [ "${passed[$idx]}" = 1 ]; then
+            printf '  OK    %s  ->  %s\n' "${r_host[idx]}" "${r_name[idx]:-${r_host[idx]}}" >&2
+        else
+            printf '  FAIL  %s  ->  %s\n' "${r_host[idx]}" "${r_name[idx]:-${r_host[idx]}}" >&2
+        fi
+    done
+
+    local answer
+    read -r -p "Save all / only passing / abort? [a/p/N] " answer
+    local -a tosave=()
+    case "$answer" in
+        a|A) tosave=("${keep[@]}") ;;
+        p|P) for idx in "${keep[@]}"; do [ "${passed[$idx]}" = 1 ] && tosave+=("$idx"); done ;;
+        *)   echo "Aborted, nothing saved." >&2; return ;;
+    esac
+    if [ "${#tosave[@]}" -eq 0 ]; then
+        echo "No nodes to save." >&2
+        return
+    fi
+
+    if [ ! -f "$config" ]; then
+        mkdir -p -m 700 "$HOME/.ssh"
+        touch "$config"
+        chmod 600 "$config"
+    fi
+
+    for idx in "${tosave[@]}"; do
+        format_entry "${r_host[idx]}" "${r_name[idx]}" "${r_user[idx]}" \
+                     "${r_port[idx]}" "${r_id[idx]}" "${r_tags[idx]}" >> "$config"
+    done
+    echo "Added ${#tosave[@]} host(s) to $config." >&2
+}
+
 add_host() {
     local config="$HOME/.ssh/config"
     local host hostname user port identity tags target
@@ -158,6 +242,13 @@ add_host() {
     read -r -p "Port (blank = default): " port
     read -r -p "IdentityFile (blank = none): " identity
     read -r -p "Tags (comma-separated, blank = none): " tags
+
+    # If any field carries a range token, this is a cluster add.
+    if has_range "$host" || has_range "$hostname" || has_range "$user" \
+       || has_range "$port" || has_range "$identity" || has_range "$tags"; then
+        add_cluster "$host" "$hostname" "$user" "$port" "$identity" "$tags"
+        return
+    fi
 
     # Connection test
     target="${hostname:-$host}"

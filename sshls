@@ -75,6 +75,60 @@ expand_range() {
     done
 }
 
+# Expand all six fields, zip by index, broadcast constants. Print N tab-separated
+# rows. Errors on expand failure, mismatched range counts, or duplicate aliases.
+build_cluster() {
+    local out
+    local -a a_host a_name a_user a_port a_id a_tags
+    out=$(expand_range "$1") || return 1; mapfile -t a_host <<<"$out"
+    out=$(expand_range "$2") || return 1; mapfile -t a_name <<<"$out"
+    out=$(expand_range "$3") || return 1; mapfile -t a_user <<<"$out"
+    out=$(expand_range "$4") || return 1; mapfile -t a_port <<<"$out"
+    out=$(expand_range "$5") || return 1; mapfile -t a_id   <<<"$out"
+    out=$(expand_range "$6") || return 1; mapfile -t a_tags <<<"$out"
+
+    # Common count N among fields with count > 1.
+    local n=1 c
+    for c in "${#a_host[@]}" "${#a_name[@]}" "${#a_user[@]}" \
+             "${#a_port[@]}" "${#a_id[@]}" "${#a_tags[@]}"; do
+        if [ "$c" -gt 1 ]; then
+            if [ "$n" -eq 1 ]; then
+                n="$c"
+            elif [ "$c" -ne "$n" ]; then
+                echo "build_cluster: range fields have mismatched counts ($n vs $c)" >&2
+                return 1
+            fi
+        fi
+    done
+
+    # Broadcast length-1 arrays to length n.
+    local -n arr
+    local name k
+    for name in a_host a_name a_user a_port a_id a_tags; do
+        local -n arr="$name"
+        if [ "${#arr[@]}" -eq 1 ]; then
+            for (( k = 1; k < n; k++ )); do arr[k]="${arr[0]}"; done
+        fi
+    done
+
+    # Reject duplicate aliases within the batch.
+    if [ "$n" -gt 1 ]; then
+        local dupes
+        dupes=$(printf '%s\n' "${a_host[@]}" | sort | uniq -d)
+        if [ -n "$dupes" ]; then
+            echo "build_cluster: would create duplicate aliases; put the range in the Host field too" >&2
+            return 1
+        fi
+    fi
+
+    local i
+    for (( i = 0; i < n; i++ )); do
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "${a_host[i]}" "${a_name[i]}" "${a_user[i]}" \
+            "${a_port[i]}" "${a_id[i]}" "${a_tags[i]}"
+    done
+}
+
 add_host() {
     local config="$HOME/.ssh/config"
     local host hostname user port identity tags target

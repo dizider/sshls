@@ -22,6 +22,59 @@ host_exists() {
     ' "$config"
 }
 
+# Exit 0 if TEXT contains a well-formed numeric range token {N..N} or {N..N..N}.
+has_range() {
+    [[ "$1" =~ \{[0-9]+\.\.[0-9]+(\.\.[0-9]+)?\} ]]
+}
+
+# Expand TEXT containing at most one numeric range token into multiple lines.
+# No token -> TEXT unchanged. Errors (return 1) on >1 token, descending, step<1.
+expand_range() {
+    local text="$1"
+    local re='\{([0-9]+)\.\.([0-9]+)(\.\.([0-9]+))?\}'
+    if [[ ! "$text" =~ $re ]]; then
+        printf '%s\n' "$text"
+        return 0
+    fi
+    local token="${BASH_REMATCH[0]}"
+    local start="${BASH_REMATCH[1]}" end="${BASH_REMATCH[2]}" step="${BASH_REMATCH[4]}"
+
+    # Reject a second range token.
+    local rest="${text/"$token"/}"
+    if [[ "$rest" =~ $re ]]; then
+        echo "expand_range: more than one range token in '$text'" >&2
+        return 1
+    fi
+
+    [ -z "$step" ] && step=1
+    if (( 10#$step < 1 )); then
+        echo "expand_range: step must be >= 1 in '$text'" >&2
+        return 1
+    fi
+    if (( 10#$start > 10#$end )); then
+        echo "expand_range: descending ranges not supported in '$text'" >&2
+        return 1
+    fi
+
+    # Zero-pad only if an operand literal has a leading zero ('0' alone excluded).
+    local pad=0 width=0
+    if [[ "$start" =~ ^0[0-9]+ || "$end" =~ ^0[0-9]+ ]]; then
+        pad=1
+        width=$(( ${#start} > ${#end} ? ${#start} : ${#end} ))
+    fi
+
+    local prefix="${text%%"$token"*}" suffix="${text#*"$token"}"
+    local i num
+    for (( i = 10#$start; i <= 10#$end; i += 10#$step )); do
+        if [ "$pad" = 1 ]; then
+            printf -v num '%0*d' "$width" "$i"
+        else
+            num="$i"
+        fi
+        printf '%s%s%s\n' "$prefix" "$num" "$suffix"
+    done
+}
+
 add_host() {
     local config="$HOME/.ssh/config"
     local host hostname user port identity tags target

@@ -18,6 +18,18 @@ sshls eu           # show only hosts tagged "eu"
 
 Inside fzf you can type to fuzzy-search, use arrow keys to navigate, and press Enter to connect. Press Escape or Ctrl-C to exit.
 
+## Adding a host
+
+Add a new host to `~/.ssh/config` without leaving `sshls`:
+
+- Run `sshls add`, or
+- Press **Ctrl-A** inside the picker.
+
+You'll be prompted for the alias, HostName, User, Port, IdentityFile, and Tags
+(Port/IdentityFile/Tags are optional). Before saving, `sshls` runs a
+non-interactive connection test; if it fails you'll be asked whether to save
+anyway. The new host appears in the picker immediately.
+
 ## Tagging hosts
 
 Add a `# Tags:` comment immediately before the `Host` entry in `~/.ssh/config`:

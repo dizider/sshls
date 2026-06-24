@@ -15,8 +15,15 @@ _sshls_tags() {
     compadd -a tags
 }
 
+_sshls_subcommands() {
+    local -a subcmds
+    subcmds=(add:'add a new host to ~/.ssh/config')
+    _describe 'subcommand' subcmds
+    _sshls_tags
+}
+
 _sshls() {
-    _arguments '::tag:_sshls_tags'
+    _arguments '::tag or subcommand:_sshls_subcommands'
 }
 
 _sshls "$@"

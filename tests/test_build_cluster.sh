@@ -14,7 +14,7 @@ assert_err() { # desc args...
         printf 'FAIL %s (expected non-zero exit)\n' "$d"; fail=1
     fi
 }
-T=$'\t'
+T=$'\x1f'
 
 # Two ranges, matching counts, different padding; constants broadcast
 out=$(build_cluster "connect-prg-{01..03}" "{1..3}.prg.eu" "matej" "22" "" "kafka")
@@ -35,5 +35,14 @@ assert_err "dup aliases" "fixedhost" "{1..3}.eu" "" "" "" ""
 
 # expand_range error propagates
 assert_err "bad range" "{3..1}" "" "" "" "" ""
+
+# Round-trip regression: empty middle field (IdentityFile) must survive parse-back.
+# Before the fix (TAB separator) read collapses empty fields and shifts later ones left,
+# so 'id' gets "kafka" and 't' gets "".  After the fix (US=\x1f) both are correct.
+row=$(build_cluster "connect-prg-{01..01}" "{1..1}.x" "matej" "22" "" "kafka" | head -1)
+US=$'\x1f'
+IFS="$US" read -r _h _hn _u _p _id _t <<< "$row"
+assert_eq "round-trip: empty IdentityFile is empty" "$_id" ""
+assert_eq "round-trip: Tags survive past empty field" "$_t" "kafka"
 
 [ "$fail" = 0 ] && echo "PASS test_build_cluster" || exit 1

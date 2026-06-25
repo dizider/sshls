@@ -121,9 +121,10 @@ build_cluster() {
         fi
     fi
 
+    local US=$'\x1f'
     local i
     for (( i = 0; i < n; i++ )); do
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+        printf "%s${US}%s${US}%s${US}%s${US}%s${US}%s\n" \
             "${a_host[i]}" "${a_name[i]}" "${a_user[i]}" \
             "${a_port[i]}" "${a_id[i]}" "${a_tags[i]}"
     done
@@ -135,8 +136,9 @@ add_cluster() {
     rows=$(build_cluster "$@") || return   # reason already printed to stderr
 
     local -a r_host r_name r_user r_port r_id r_tags
+    local US=$'\x1f'
     local h hn u p id t
-    while IFS=$'\t' read -r h hn u p id t; do
+    while IFS="$US" read -r h hn u p id t; do
         r_host+=("$h"); r_name+=("$hn"); r_user+=("$u")
         r_port+=("$p"); r_id+=("$id");  r_tags+=("$t")
     done <<<"$rows"

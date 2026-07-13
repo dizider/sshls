@@ -1,0 +1,6 @@
+# makepkg build artifacts
+pkg/
+src/
+*.pkg.tar.*
+# makepkg VCS source clone cache
+sshls-git/

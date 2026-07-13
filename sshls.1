@@ -1,0 +1,105 @@
+.TH SSHLS 1 "2026-07-13" "sshls 1.0.0" "User Commands"
+.SH NAME
+sshls \- interactive SSH host selector built on fzf
+.SH SYNOPSIS
+.B sshls
+.RI [ tag ]
+.br
+.B sshls
+.B add
+.SH DESCRIPTION
+.B sshls
+lists the hosts defined in
+.I ~/.ssh/config
+and presents them in an
+.BR fzf (1)
+picker with a live preview of each host's config block. Selecting a host
+opens an SSH connection to it.
+.PP
+With no argument, all hosts are shown. Given a
+.IR tag ,
+only hosts carrying that tag are shown.
+.SH COMMANDS
+.TP
+.BI sshls " tag"
+Show only hosts whose
+.B # Tags:
+comment includes
+.IR tag .
+.TP
+.B sshls add
+Interactively add a new host to
+.IR ~/.ssh/config .
+See
+.BR "ADDING HOSTS" .
+.SH KEY BINDINGS
+Inside the picker:
+.TP
+.B Enter
+Connect to the selected host.
+.TP
+.B Ctrl-A
+Add a new host (equivalent to
+.BR "sshls add" ).
+.TP
+.B Type
+Fuzzy-search the list.
+.TP
+.B Escape ", " Ctrl-C
+Exit without connecting.
+.SH ADDING HOSTS
+.B sshls add
+(or Ctrl-A in the picker) prompts for the alias, HostName, User, Port,
+IdentityFile, and Tags; Port, IdentityFile, and Tags are optional. Before
+saving, a non-interactive connection test is run; on failure you are asked
+whether to save anyway. The new host appears in the picker immediately.
+.PP
+If a field contains an inline bash-style range
+.RB ( {start..end}
+or
+.BR {start..end..step} ),
+the add flow expands it into one host per node. Padding follows the numbers
+you write. Multiple ranged fields must expand to the same count and are
+matched by position; non-ranged fields are copied to every node. All nodes are
+connection-tested in parallel; you then choose to save all, only the passing
+ones, or abort. Nodes whose alias already exists are skipped.
+.SH TAGGING
+Tag a host by placing a
+.B # Tags:
+comment immediately before its
+.B Host
+entry in
+.IR ~/.ssh/config ,
+with tags comma-separated:
+.PP
+.RS
+.nf
+# Tags: production, eu
+Host web-eu-01
+    HostName 1.eu.example.com
+    User alice
+.fi
+.RE
+.PP
+Tags are shown next to the hostname in the picker. A host tagged
+.B ignore
+is hidden from the list entirely.
+.SH FILES
+.TP
+.I ~/.ssh/config
+The SSH client configuration that
+.B sshls
+reads hosts and tags from, and writes new hosts to.
+.SH DEPENDENCIES
+.BR fzf (1),
+.BR ssh (1),
+.BR awk (1),
+.BR column (1),
+.BR sed (1),
+.BR sort (1).
+.SH SEE ALSO
+.BR ssh (1),
+.BR ssh_config (5),
+.BR fzf (1)
+.SH AUTHOR
+Matej Jehlicka

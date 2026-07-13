@@ -34,5 +34,6 @@ package() {
   install -Dm755 sshls   "$pkgdir/usr/bin/sshls"
   install -Dm644 _sshls  "$pkgdir/usr/share/zsh/site-functions/_sshls"
   install -Dm644 README.md "$pkgdir/usr/share/doc/sshls/README.md"
+  install -Dm644 sshls.1 "$pkgdir/usr/share/man/man1/sshls.1"
 }
 

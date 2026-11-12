@@ -12,6 +12,8 @@ _sshls_tags() {
             }
         }
     ' ~/.ssh/config | sort -u)}")
+    # Do not offer tags that are already on the command line.
+    tags=(${tags:|used_tags})
     compadd -a tags
 }
 
@@ -23,7 +25,13 @@ _sshls_subcommands() {
 }
 
 _sshls() {
-    _arguments '::tag or subcommand:_sshls_subcommands'
+    local -a used_tags
+    used_tags=(${words[2,CURRENT-1]})
+    if (( CURRENT == 2 )); then
+        _sshls_subcommands
+    elif [[ ${words[2]} != add ]]; then
+        _sshls_tags
+    fi
 }
 
 _sshls "$@"

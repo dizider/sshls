@@ -283,46 +283,125 @@ add_host() {
     echo "Added '$host' to $config." >&2
 }
 
-if [ "${SSHLS_LIB:-}" != 1 ]; then
-    tag_filter="${1:-}"
+SSHLS_COLUMNS_ALL="host hostname user port identityfile tags"
+SSHLS_COLUMNS_DEFAULT="host hostname user tags"
 
-    if [ "$tag_filter" = "add" ]; then
+# Print the space-separated column list from the "columns" array in the TOML
+# file FILE. Print the default list if FILE or the key is missing. Unknown
+# column names are skipped with a warning.
+read_columns() {
+    local file="$1" raw="" name out=""
+    if [ -f "$file" ]; then
+        raw=$(awk '
+            /^[[:space:]]*\[/ && !inarr { section = 1 }
+            !section && /^[[:space:]]*columns[[:space:]]*=/ { inarr = 1 }
+            inarr {
+                sub(/#.*/, "")
+                buf = buf $0
+                if ($0 ~ /\]/) { print buf; exit }
+            }
+        ' "$file")
+    fi
+    if [ -z "$raw" ]; then
+        printf '%s\n' "$SSHLS_COLUMNS_DEFAULT"
+        return
+    fi
+    raw="${raw#*[}"; raw="${raw%]*}"
+    while [[ "$raw" =~ [\"\']([^\"\']*)[\"\'] ]]; do
+        name="${BASH_REMATCH[1],,}"
+        raw="${raw#*"${BASH_REMATCH[0]}"}"
+        if [[ " $SSHLS_COLUMNS_ALL " == *" $name "* ]]; then
+            out="${out:+$out }$name"
+        else
+            echo "sshls: unknown column '$name' in $file (valid: $SSHLS_COLUMNS_ALL)" >&2
+        fi
+    done
+    [ -z "$out" ] && out="$SSHLS_COLUMNS_DEFAULT"
+    printf '%s\n' "$out"
+}
+
+# Read TSV rows (host, hostname, user, port, identityfile, tags) on stdin.
+# Print an aligned table of the columns in COLS, with a header row. Each line
+# starts with the host alias and a tab, so fzf can hide it and still use it.
+format_table() {
+    awk -F'\t' -v cols="$1" -v all="$SSHLS_COLUMNS_ALL" '
+        BEGIN {
+            n = split(all, a, " "); for (i = 1; i <= n; i++) idx[a[i]] = i
+            nc = split(cols, c, " ")
+            for (j = 1; j <= nc; j++) { cell[0, j] = toupper(c[j]); w[j] = length(cell[0, j]) }
+        }
+        {
+            key[NR] = $1
+            for (j = 1; j <= nc; j++) {
+                v = $(idx[c[j]]); if (v == "") v = "-"
+                cell[NR, j] = v; if (length(v) > w[j]) w[j] = length(v)
+            }
+        }
+        END {
+            for (r = 0; r <= NR; r++) {
+                line = ""
+                for (j = 1; j <= nc; j++) {
+                    if (j < nc) line = line sprintf("%-" w[j] "s  ", cell[r, j])
+                    else        line = line cell[r, j]
+                }
+                printf "%s\t%s\n", key[r], line
+            }
+        }
+    '
+}
+
+if [ "${SSHLS_LIB:-}" != 1 ]; then
+    tag_filter="$*"
+    columns=$(read_columns "${XDG_CONFIG_HOME:-$HOME/.config}/sshls/config.toml")
+
+    if [ "${1:-}" = "add" ]; then
         add_host
         tag_filter=""
     fi
 
     while true; do
-        entries=$(awk '
-            /^Host / {
-                if (host != "" && host !~ /[*?]/ && tags !~ /(^|,)[[:space:]]*ignore[[:space:]]*(,|$)/) {
-                    if (tags != "") printf "%s\t[%s]\n", host, tags
-                    else print host
+        # One TSV row per host: alias, HostName, User, Port, IdentityFile, tags.
+        entries=$(awk -v tag="$tag_filter" '
+            BEGIN { nneed = split(tag, need, " ") }
+            # Print the host only if it carries every requested tag.
+            function flush(   n, i, j, t, have, out) {
+                if (host == "" || host ~ /[*?]/) return
+                n = split(tags, t, ",")
+                split("", have)
+                for (i = 1; i <= n; i++) {
+                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", t[i])
+                    if (t[i] == "ignore") return
+                    have[t[i]] = 1
+                    if (t[i] != "") out = (out == "" ? t[i] : out " " t[i])
                 }
-                host = $2
+                for (j = 1; j <= nneed; j++) if (!(need[j] in have)) return
+                printf "%s\t%s\t%s\t%s\t%s\t%s\n", host, hostname, user, port, identity, out
+            }
+            /^Host / {
+                flush()
+                host = $2; hostname = ""; user = ""; port = ""; identity = ""
                 tags = pending_tags
                 pending_tags = ""
+                next
             }
             /^[[:space:]]*#[[:space:]]*[Tt]ags:/ {
                 sub(/^[[:space:]]*#[[:space:]]*[Tt]ags:[[:space:]]*/, "")
                 pending_tags = $0
+                next
             }
-            END {
-                if (host != "" && host !~ /[*?]/ && tags !~ /(^|,)[[:space:]]*ignore[[:space:]]*(,|$)/) {
-                    if (tags != "") printf "%s\t[%s]\n", host, tags
-                    else print host
-                }
-            }
-        ' ~/.ssh/config)
+            tolower($1) == "hostname" { hostname = $2 }
+            tolower($1) == "user"     { user = $2 }
+            tolower($1) == "port"     { port = $2 }
+            tolower($1) == "identityfile" { identity = $2 }
+            END { flush() }
+        ' ~/.ssh/config | sort)
 
-        if [ -n "$tag_filter" ]; then
-            entries=$(echo "$entries" | awk -F'\t' -v tag="$tag_filter" 'NF>1 && $2 ~ "([\\[,][[:space:]]*)" tag "([[:space:]]*(,|\\]))"')
-        fi
+        table=$(printf '%s' "$entries" | format_table "$columns")
 
-        table=$(echo "$entries" | sort | column -t -s $'\t')
-
-        fzf_out=$(echo "$table" | fzf --height 15 --expect=ctrl-a \
+        fzf_out=$(echo "$table" | fzf --height 15 --header-lines=1 --expect=ctrl-a \
+            --delimiter=$'\t' --with-nth=2.. \
             --header 'Enter: connect  Ctrl-A: add host' \
-            --preview 'host=$(echo {} | awk "{print \$1}"); awk -v host="$host" "/^[[:space:]]*#[[:space:]]*[Tt]ags:/{if (!found) last_tags=\$0; next} /^Host /{if (found) exit; if (\$2==host){found=1; if (last_tags!=\"\") print last_tags}; last_tags=\"\"} found{print}" ~/.ssh/config')
+            --preview 'awk -v host={1} "/^[[:space:]]*#[[:space:]]*[Tt]ags:/{if (!found) last_tags=\$0; next} /^Host /{if (found) exit; if (\$2==host){found=1; if (last_tags!=\"\") print last_tags}; last_tags=\"\"} found{print}" ~/.ssh/config')
 
         key=$(printf '%s\n' "$fzf_out" | sed -n 1p)
         selected=$(printf '%s\n' "$fzf_out" | sed -n 2p)
@@ -334,7 +413,7 @@ if [ "${SSHLS_LIB:-}" != 1 ]; then
 
         [ -z "$selected" ] && break
 
-        host=$(echo "$selected" | awk '{print $1}')
+        host="${selected%%$'\t'*}"
         TERM=xterm-256color ssh "$host"
     done
 fi
